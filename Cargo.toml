@@ -1,0 +1,12 @@
+[package]
+name = "crimson_blade"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vulkano = "0.34"
+vulkano-shaders = "0.34"
+winit = { version = "0.29", features = ["rwh_05"] }
+nalgebra = { version = "*", features = ["bytemuck"] }
+nalgebra-glm = { version = "0.17.0" }
+bytemuck = "*"
