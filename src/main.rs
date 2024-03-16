@@ -1,31 +1,14 @@
 use vulkano::{
-    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage},
-    command_buffer::{
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage}, command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents
-    },
-    descriptor_set::{
-        allocator::StandardDescriptorSetAllocator, layout::{self, DescriptorSetLayoutCreateFlags}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet},
-        device::{
+    }, descriptor_set::{
+        allocator::StandardDescriptorSetAllocator, layout::{self, DescriptorSetLayoutCreateFlags}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::{
             physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo, QueueFlags
-        },
-    image::{view::ImageView, Image},
-    instance::{Instance, InstanceCreateInfo},
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
-    pipeline::{
+        }, format::Format, image::{view::ImageView, Image, ImageCreateInfo, ImageUsage}, instance::{Instance, InstanceCreateInfo}, memory::allocator::{AllocationCreateInfo, MemoryAllocator, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{
         graphics::{
-            color_blend::{ColorBlendAttachmentState, ColorBlendState},
-            input_assembly::InputAssemblyState,
-            multisample::MultisampleState,
-            rasterization::RasterizationState,
-            vertex_input::{Vertex, VertexDefinition},
-            viewport::{Viewport, ViewportState},
-            GraphicsPipelineCreateInfo
+            color_blend::{ColorBlendAttachmentState, ColorBlendState},depth_stencil::{DepthState, DepthStencilState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo
         }, layout::PipelineDescriptorSetLayoutCreateInfo, DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo
-    },
-    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
-    swapchain::{self, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo},
-    sync::{self, future::FenceSignalFuture, GpuFuture},
-    Validated, Version, VulkanError, VulkanLibrary
+    }, render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass}, swapchain::{self, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, Version, VulkanError, VulkanLibrary
 };
 use winit::{
     event::{Event, WindowEvent},
@@ -46,7 +29,7 @@ fn main() {
     let mut mvp = MVP::new();
 
     mvp.view = look_at(&vec3(0.0, 0.0, 0.1), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
-    mvp.model = translate(&identity(), &vec3(0.0, 0.0, -1.0));
+    //mvp.model = translate(&identity(), &vec3(0.0, 0.0, -1.0));
 
     let event_loop = winit::event_loop::EventLoopBuilder::new()
         .build()
@@ -179,16 +162,28 @@ fn main() {
 
     let vertices = [
         Vertex {
-            position: [-0.5, 0.5, 0.0],
-            color: [1.0, 0.0, 0.0],
+            position: [-0.5, 0.5, -0.5],
+            color: [0.0, 0.0, 0.0],
         },
         Vertex {
-            position: [0.5, 0.5, 0.0],
-            color: [0.0, 1.0, 0.0],
+            position: [0.5, 0.5, -0.5],
+            color: [0.0, 0.0, 0.0],
         },
         Vertex {
-            position: [0.0, -0.5, 0.0],
-            color: [0.0, 0.0, 1.0],
+            position: [0.0, -0.5, -0.5],
+            color: [0.0, 0.0, 0.0],
+        },
+        Vertex {
+            position: [-0.5, -0.5, -0.6],
+            color: [1.0, 1.0, 1.0],
+        },
+        Vertex {
+            position: [0.5, -0.5, -0.6],
+            color: [1.0, 1.0, 1.0],
+        },
+        Vertex {
+            position: [0.0, 0.5, -0.6],
+            color: [1.0, 1.0, 1.0],
         },
     ];
 
@@ -257,11 +252,17 @@ fn main() {
                 samples: 1,
                 load_op: Clear,
                 store_op: Store,
+            },
+            depth: {
+                format: Format::D16_UNORM,
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
             }
         },
         pass: {
             color: [color],
-            depth_stencil: {}
+            depth_stencil: {depth}
         }
     )
     .unwrap();
@@ -295,6 +296,10 @@ fn main() {
                 viewport_state: Some(ViewportState::default()),
                 rasterization_state: Some(RasterizationState::default()),
                 multisample_state: Some(MultisampleState::default()),
+                depth_stencil_state: Some(DepthStencilState {
+                    depth: Some(DepthState::simple()),
+                    ..Default::default()
+                }),
                 color_blend_state: Some(ColorBlendState::with_attachment_states(
                     subpass.num_color_attachments(),
                     ColorBlendAttachmentState::default()
@@ -340,14 +345,15 @@ fn main() {
         depth_range: 0.0..=1.0,
     };
 
-    let mut framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut viewport);
+    let mut framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut viewport, &memory_allocator);
 
     let recreate_swapchain = Arc::new(AtomicBool::new(false));
 
     let recr_swapch = recreate_swapchain.clone(); 
 
-    // rendering thread
-    let rendering_handler = std::thread::spawn(move || loop {
+    // rendering thread, handles rendering handling, handles the renders, has all the rendering code
+    // a monad is a monoid in the category of endofunctors
+    std::thread::spawn(move || loop {
         // do render operations
         // garbo collecto?
 
@@ -367,7 +373,7 @@ fn main() {
 
             swapchain = new_swapchain;
             framebuffers =
-                window_size_dependent_setup(&new_images, render_pass.clone(), &mut viewport);
+                window_size_dependent_setup(&new_images, render_pass.clone(), &mut viewport, &memory_allocator);
             recr_swapch.store(false, Ordering::Relaxed);
         }
 
@@ -392,7 +398,7 @@ fn main() {
             recr_swapch.store(true, Ordering::Relaxed);
         }
 
-        let clear_values = vec![Some([1.0, 0.80, 0.85, 1.0].into())];
+        let clear_values = vec![Some([1.0, 0.80, 0.85, 1.0].into()), Some(1.0.into())];
 
         let mut cmd_buffer_builder = AutoCommandBufferBuilder::primary(
             &command_buffer_allocator,
@@ -484,10 +490,21 @@ fn window_size_dependent_setup(
     images: &[Arc<Image>],
     render_pass: Arc<RenderPass>,
     viewport: &mut Viewport,
+    allocator: &Arc<StandardMemoryAllocator>,
 ) -> Vec<Arc<Framebuffer>>{
     let extent = images[0].extent();
     viewport.extent = [extent[0] as f32, extent[1] as f32];
-
+    let depth_buffer = ImageView::new_default(
+        Image::new(allocator.clone(), ImageCreateInfo{
+            usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+            format: Format::D16_UNORM,
+            extent: extent,
+            ..Default::default()
+        },
+        AllocationCreateInfo::default()).unwrap(),
+    )
+    .unwrap();
+    
     images
         .iter()
         .map(|image| {
@@ -495,7 +512,7 @@ fn window_size_dependent_setup(
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view],
+                    attachments: vec![view, depth_buffer.clone()],
                     ..Default::default()
                 },
             )
