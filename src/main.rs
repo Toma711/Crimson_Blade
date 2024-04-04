@@ -1,5 +1,5 @@
 use vulkano::{
-    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage}, command_buffer::{
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents
     }, descriptor_set::{
         allocator::StandardDescriptorSetAllocator, layout::{self, DescriptorSetLayoutCreateFlags}, CopyDescriptorSet, PersistentDescriptorSet, WriteDescriptorSet}, device::{
@@ -28,7 +28,7 @@ use bytemuck::{Pod, Zeroable};
 fn main() {
     let mut mvp = MVP::new();
 
-    mvp.view = look_at(&vec3(0.0, 0.0, 0.1), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
+    mvp.view = look_at(&vec3(0.0, 0.0, 1.0), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
     //mvp.model = translate(&identity(), &vec3(0.0, 0.0, -1.0));
 
     let event_loop = winit::event_loop::EventLoopBuilder::new()
@@ -162,30 +162,29 @@ fn main() {
 
     let vertices = [
         Vertex {
-            position: [-0.5, 0.5, -0.5],
-            color: [0.0, 0.0, 0.0],
+            position: [-0.625, 0.5, -0.5],
+            color: [1.0, 0.0, 0.0],
         },
         Vertex {
-            position: [0.5, 0.5, -0.5],
-            color: [0.0, 0.0, 0.0],
+            position: [0.625, 0.5, -0.5],
+            color: [0.0, 1.0, 0.0],
         },
         Vertex {
             position: [0.0, -0.5, -0.5],
-            color: [0.0, 0.0, 0.0],
+            color: [0.0, 0.0, 1.0],
         },
         Vertex {
-            position: [-0.5, -0.5, -0.6],
-            color: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            position: [0.5, -0.5, -0.6],
-            color: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            position: [0.0, 0.5, -0.6],
-            color: [1.0, 1.0, 1.0],
+            position: [-0.25, -0.25, -0.75],
+            color: [0.0, 0.0, 1.0],
         },
     ];
+
+    let indices = [
+        0, 1, 2,
+        0, 1, 4,
+        1, 2, 4,
+        0, 2, 4,
+        ];
 
     let vertex_buffer = Buffer::from_iter(
         memory_allocator.clone(),
@@ -198,6 +197,20 @@ fn main() {
             ..Default::default()
         },
         vertices,
+    )
+    .unwrap();
+
+    let index_buffer: Subbuffer<[u16]> = Buffer::from_iter(
+        memory_allocator.clone(),
+        BufferCreateInfo {
+            usage: BufferUsage::INDEX_BUFFER,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+            ..Default::default()
+        },
+        indices,
     )
     .unwrap();
 
@@ -380,12 +393,17 @@ fn main() {
         let elapsed = rotation_start.elapsed().as_secs() as f64
             + rotation_start.elapsed().subsec_nanos() as f64 / 1_000_000_000.0;
         let elapsed_as_radians = elapsed * pi::<f64>() / 180.0 * 30.0;
+        let rotata = rotate_normalized_axis(
+            &mvp.model,
+            pi::<f32>()/2.0,
+            &vec3(1.0, 0.0, 0.0),
+        );
         let model = rotate_normalized_axis(
             &mvp.model,
             elapsed_as_radians as f32,
-            &vec3(0.0, 0.0, 1.0),
+            &vec3(0.0, 1.0, 0.0),
         );
-        uniform_buffer.write().unwrap().model = model;
+        uniform_buffer.write().unwrap().model = model * rotata;
 
         let (image_index, suboptimal, acquire_feature) =
             match swapchain::acquire_next_image(swapchain.clone(), None).map_err(Validated::unwrap) {
@@ -398,7 +416,7 @@ fn main() {
             recr_swapch.store(true, Ordering::Relaxed);
         }
 
-        let clear_values = vec![Some([1.0, 0.80, 0.85, 1.0].into()), Some(1.0.into())];
+        let clear_values = vec![Some([1.0, 0.80, 0.65, 1.0].into()), Some(1.0.into())];
 
         let mut cmd_buffer_builder = AutoCommandBufferBuilder::primary(
             &command_buffer_allocator,
@@ -433,10 +451,12 @@ fn main() {
             )
             .unwrap()
             .bind_vertex_buffers(0, vertex_buffer.clone())
+            .unwrap()
+            .bind_index_buffer(index_buffer.clone())
             .unwrap();
 
         cmd_buffer_builder
-            .draw(vertex_buffer.len() as u32, 1, 0, 0)
+            .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
             .unwrap();
 
         cmd_buffer_builder
