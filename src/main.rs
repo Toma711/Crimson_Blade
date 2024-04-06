@@ -6,7 +6,7 @@ use vulkano::{
             physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo, QueueFlags
         }, format::Format, image::{view::ImageView, Image, ImageCreateInfo, ImageUsage}, instance::{Instance, InstanceCreateInfo}, memory::allocator::{AllocationCreateInfo, MemoryAllocator, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{
         graphics::{
-            color_blend::{ColorBlendAttachmentState, ColorBlendState},depth_stencil::{DepthState, DepthStencilState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo
+            color_blend::{ColorBlendAttachmentState, ColorBlendState},depth_stencil::{DepthState, DepthStencilState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::{RasterizationState, CullMode, FrontFace}, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo
         }, layout::PipelineDescriptorSetLayoutCreateInfo, DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo
     }, render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass}, swapchain::{self, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, Version, VulkanError, VulkanLibrary
 };
@@ -28,7 +28,7 @@ use bytemuck::{Pod, Zeroable};
 fn main() {
     let mut mvp = MVP::new();
 
-    mvp.view = look_at(&vec3(0.0, 0.0, 1.0), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
+    mvp.view = look_at(&vec3(0.0, 0.0, 3.0), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
     //mvp.model = translate(&identity(), &vec3(0.0, 0.0, -1.0));
 
     let event_loop = winit::event_loop::EventLoopBuilder::new()
@@ -174,16 +174,58 @@ fn main() {
             color: [0.0, 0.0, 1.0],
         },
         Vertex {
-            position: [-0.25, -0.25, -0.75],
+            position: [0.0, 0.25, -1.5],
+            color: [1.0, 1.0, 0.0],
+        },
+        Vertex {
+            position: [1.375, 0.5, -0.5],
+            color: [1.0, 0.0, 0.0],
+        },
+        Vertex {
+            position: [2.625, 0.5, -0.5],
+            color: [0.0, 1.0, 0.0],
+        },
+        Vertex {
+            position: [2.0, -0.5, -0.5],
             color: [0.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [2.0, 0.25, -1.5],
+            color: [1.0, 1.0, 0.0],
+        },
+        Vertex {
+            position: [-2.625, 0.5, -0.5],
+            color: [1.0, 0.0, 0.0],
+        },
+        Vertex {
+            position: [-1.375, 0.5, -0.5],
+            color: [0.0, 1.0, 0.0],
+        },
+        Vertex {
+            position: [-2.0, -0.5, -0.5],
+            color: [0.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [-2.0, 0.25, -1.5],
+            color: [1.0, 1.0, 0.0],
         },
     ];
 
     let indices = [
-        0, 1, 2,
-        0, 1, 4,
-        1, 2, 4,
-        0, 2, 4,
+        2, 1, 0,
+        1, 3, 0,
+        2, 3, 1,
+        2, 0, 3,
+
+        6, 5, 4,
+        5, 7, 4,
+        6, 7, 5,
+        6, 4, 7,
+
+        10, 9, 8,
+        9, 11, 8,
+        10, 11, 9,
+        10, 8, 11,
         ];
 
     let vertex_buffer = Buffer::from_iter(
@@ -307,7 +349,11 @@ fn main() {
                 vertex_input_state: Some(vertex_input_state),
                 input_assembly_state: Some(InputAssemblyState::default()),
                 viewport_state: Some(ViewportState::default()),
-                rasterization_state: Some(RasterizationState::default()),
+                rasterization_state: Some(RasterizationState {
+                    cull_mode: CullMode::Back,
+                    front_face: FrontFace::CounterClockwise,
+                    ..Default::default()
+                }),
                 multisample_state: Some(MultisampleState::default()),
                 depth_stencil_state: Some(DepthStencilState {
                     depth: Some(DepthState::simple()),
@@ -392,16 +438,19 @@ fn main() {
 
         let elapsed = rotation_start.elapsed().as_secs() as f64
             + rotation_start.elapsed().subsec_nanos() as f64 / 1_000_000_000.0;
-        let elapsed_as_radians = elapsed * pi::<f64>() / 180.0 * 30.0;
+        let elapsed_as_radians = elapsed * std::f64::consts::PI / 180.0 * 30.0;
         let rotata = rotate_normalized_axis(
             &mvp.model,
-            pi::<f32>()/2.0,
+            //-std::f32::consts::PI/2.0,
+            elapsed_as_radians as f32,
+            //0.0,
             &vec3(1.0, 0.0, 0.0),
         );
         let model = rotate_normalized_axis(
             &mvp.model,
-            elapsed_as_radians as f32,
-            &vec3(0.0, 1.0, 0.0),
+            //elapsed_as_radians as f32,
+            0.0,
+            &vec3(0.0, 0.0, 1.0),
         );
         uniform_buffer.write().unwrap().model = model * rotata;
 
