@@ -22,7 +22,7 @@ use std::{
     },
     time::Instant,
 };
-use nalgebra_glm::{half_pi, identity, look_at, perspective, rotate_normalized_axis, translate, vec3, TMat4, pi};
+use nalgebra_glm::{half_pi, identity, look_at, perspective, rotate_normalized_axis, translate, vec3, TMat4, pi, sqrt, cross};
 use bytemuck::{Pod, Zeroable};
 
 fn main() {
@@ -139,6 +139,8 @@ fn main() {
         #[format(R32G32B32_SFLOAT)]
         position: [f32; 3],
         #[format(R32G32B32_SFLOAT)]
+        normal: [f32; 3],
+        #[format(R32G32B32_SFLOAT)]
         color: [f32; 3],
     }
 
@@ -160,56 +162,146 @@ fn main() {
         }
     }
 
-    let vertices = [
+    let mut vertices = [
+        // With indices
+        // Vertex {
+        //     position: [-1.0, 3.0_f32.sqrt()/3.0, 0.0],
+        //     color: [1.0, 0.0, 0.0],
+        // },
+        // Vertex {
+        //     position: [1.0, 3.0_f32.sqrt()/3.0, 0.0],
+        //     color: [0.0, 1.0, 0.0],
+        // },
+        // Vertex {
+        //     position: [0.0, -2.0*3.0_f32.sqrt()/3.0, 0.0],
+        //     color: [0.0, 0.0, 1.0],
+        // },
+        // Vertex {
+        //     position: [0.0, 0.0, -(21.0_f32/9.0).sqrt()],
+        //     color: [1.0, 1.0, 0.0],
+        // },
+
+        // no indices :frowny_face:
+        // normals get calculated lower in poggwam
         Vertex {
-            position: [-0.625, 0.5, -0.5],
-            color: [1.0, 0.0, 0.0],
-        },
-        Vertex {
-            position: [0.625, 0.5, -0.5],
-            color: [0.0, 1.0, 0.0],
-        },
-        Vertex {
-            position: [0.0, -0.5, -0.5],
+            position: [0.0, -2.0*3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
             color: [0.0, 0.0, 1.0],
         },
         Vertex {
-            position: [0.0, 0.25, -1.5],
-            color: [1.0, 1.0, 0.0],
-        },
-        Vertex {
-            position: [1.375, 0.5, -0.5],
-            color: [1.0, 0.0, 0.0],
-        },
-        Vertex {
-            position: [2.625, 0.5, -0.5],
+            position: [1.0, 3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
             color: [0.0, 1.0, 0.0],
         },
         Vertex {
-            position: [2.0, -0.5, -0.5],
-            color: [0.0, 0.0, 1.0],
-        },
-        Vertex {
-            position: [2.0, 0.25, -1.5],
-            color: [1.0, 1.0, 0.0],
-        },
-        Vertex {
-            position: [-2.625, 0.5, -0.5],
+            position: [-1.0, 3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
             color: [1.0, 0.0, 0.0],
         },
+
         Vertex {
-            position: [-1.375, 0.5, -0.5],
+            position: [1.0, 3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 0.0, 0.0],
             color: [0.0, 1.0, 0.0],
         },
         Vertex {
-            position: [-2.0, -0.5, -0.5],
+            position: [0.0, 0.0, -(21.0_f32/9.0).sqrt()],
+            normal: [0.0, 1.0, 0.0],
+            color: [1.0, 1.0, 0.0],
+        },
+        Vertex {
+            position: [-1.0, 3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            color: [1.0, 0.0, 0.0],
+        },
+
+        Vertex {
+            position: [0.0, -2.0*3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
             color: [0.0, 0.0, 1.0],
         },
         Vertex {
-            position: [-2.0, 0.25, -1.5],
+            position: [0.0, 0.0, -(21.0_f32/9.0).sqrt()],
+            normal: [0.0, 1.0, 0.0],
             color: [1.0, 1.0, 0.0],
         },
+        Vertex {
+            position: [1.0, 3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            color: [0.0, 1.0, 0.0],
+        },
+
+        Vertex {
+            position: [0.0, -2.0*3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            color: [0.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [-1.0, 3.0_f32.sqrt()/3.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            color: [1.0, 0.0, 0.0],
+        },
+        Vertex {
+            position: [0.0, 0.0, -(21.0_f32/9.0).sqrt()],
+            normal: [0.0, 1.0, 0.0],
+            color: [1.0, 1.0, 0.0],
+        },
+
+        // other twiangles
+        // Vertex {
+        //     position: [1.375, 0.5, -0.5],
+        //     color: [1.0, 0.0, 0.0],
+        // },
+        // Vertex {
+        //     position: [2.625, 0.5, -0.5],
+        //     color: [0.0, 1.0, 0.0],
+        // },
+        // Vertex {
+        //     position: [2.0, -0.5, -0.5],
+        //     color: [0.0, 0.0, 1.0],
+        // },
+        // Vertex {
+        //     position: [2.0, 0.25, -1.5],
+        //     color: [1.0, 1.0, 0.0],
+        // },
+        // Vertex {
+        //     position: [-2.625, 0.5, -0.5],
+        //     color: [1.0, 0.0, 0.0],
+        // },
+        // Vertex {
+        //     position: [-1.375, 0.5, -0.5],
+        //     color: [0.0, 1.0, 0.0],
+        // },
+        // Vertex {
+        //     position: [-2.0, -0.5, -0.5],
+        //     color: [0.0, 0.0, 1.0],
+        // },
+        // Vertex {
+        //     position: [-2.0, 0.25, -1.5],
+        //     color: [1.0, 1.0, 0.0],
+        // },
     ];
+
+    fn cross([a1, a2, a3]: [f32; 3], [b1, b2, b3]: [f32; 3]) -> [f32; 3] {
+        [a2*b3-a3*b2, a3*b1-a1*b3,a1*b2-a2*b1]
+    }
+
+    fn normalize([a1, a2, a3]: [f32; 3]) -> [f32; 3] {
+        let sqr_length = a1*a1+a2*a2+a3*a3;
+        let length = sqr_length.sqrt();
+        [a1/length, a2/length, a3/length]
+    }
+
+    for list in vertices.chunks_mut(3) {
+        let [a, b, c] = list else { unreachable!(); };
+        let ba = [b.position[0] - a.position[0], b.position[1] - a.position[1], b.position[2] - a.position[2]];
+        let ca = [b.position[0] - c.position[0], b.position[1] - c.position[1], b.position[2] - c.position[2]];
+        let ortho = cross(ba, ca);
+        let normal = normalize(ortho);
+        a.normal = normal;
+        b.normal = normal;
+        c.normal = normal;
+    }
 
     let indices = [
         2, 1, 0,
@@ -217,15 +309,15 @@ fn main() {
         2, 3, 1,
         2, 0, 3,
 
-        6, 5, 4,
-        5, 7, 4,
-        6, 7, 5,
-        6, 4, 7,
+        // 6, 5, 4,
+        // 5, 7, 4,
+        // 6, 7, 5,
+        // 6, 4, 7,
 
-        10, 9, 8,
-        9, 11, 8,
-        10, 11, 9,
-        10, 8, 11,
+        // 10, 9, 8,
+        // 9, 11, 8,
+        // 10, 11, 9,
+        // 10, 8, 11,
         ];
 
     let vertex_buffer = Buffer::from_iter(
@@ -263,9 +355,11 @@ fn main() {
                 #version 450
                 layout(location = 0) in vec3 position;
 
-                layout(location = 1) in vec3 color;
+                layout(location = 1) in vec3 normal;
+                layout(location = 2) in vec3 color;
 
                 layout(location = 0) out vec3 out_color;
+                layout(location = 1) out vec3 out_normal;
 
                 layout(set = 0, binding = 0) uniform MVP_Data {
                     mat4 model;
@@ -277,6 +371,7 @@ fn main() {
                     mat4 worldview = uniforms.view * uniforms.model;
                     gl_Position = uniforms.projection * worldview * vec4(position, 1.0);
                     out_color = color;
+                    out_normal = (uniforms.model * vec4(normal, 1.0)).xyz;
                 }
             "
         }
@@ -289,11 +384,14 @@ fn main() {
             src: r"
                 #version 450
                 layout(location = 0) in vec3 color;
+                layout(location = 1) in vec3 normal;
 
                 layout(location = 0) out vec4 f_color;
 
                 void main() {
-                    f_color = vec4(color, 1.0);
+                    vec3 light = vec3(0.0, 1.0, 0.0);
+                    float light_dist = distance(light, normal);
+                    f_color = vec4(color * light_dist / 2, 1.0);
                 }
             "
         }
@@ -351,7 +449,7 @@ fn main() {
                 viewport_state: Some(ViewportState::default()),
                 rasterization_state: Some(RasterizationState {
                     cull_mode: CullMode::Back,
-                    front_face: FrontFace::CounterClockwise,
+                    front_face: FrontFace::Clockwise,
                     ..Default::default()
                 }),
                 multisample_state: Some(MultisampleState::default()),
@@ -441,7 +539,7 @@ fn main() {
         let elapsed_as_radians = elapsed * std::f64::consts::PI / 180.0 * 30.0;
         let rotata = rotate_normalized_axis(
             &mvp.model,
-            //-std::f32::consts::PI/2.0,
+            //std::f32::consts::PI*2.0/3.0,
             elapsed_as_radians as f32,
             //0.0,
             &vec3(1.0, 0.0, 0.0),
@@ -500,12 +598,13 @@ fn main() {
             )
             .unwrap()
             .bind_vertex_buffers(0, vertex_buffer.clone())
-            .unwrap()
-            .bind_index_buffer(index_buffer.clone())
             .unwrap();
+            // .bind_index_buffer(index_buffer.clone())
+            // .unwrap();
 
         cmd_buffer_builder
-            .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
+            .draw(vertex_buffer.len() as u32, 1, 0, 0)
+            //.draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
             .unwrap();
 
         cmd_buffer_builder
