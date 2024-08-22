@@ -11,14 +11,16 @@ use vulkano::{
     }, render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass}, swapchain::{self, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, Version, VulkanError, VulkanLibrary
 };
 use winit::{
-    event::{Event, WindowEvent},
+    event::*,
     event_loop::{self, ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    window::*,
+    keyboard::{Key, NamedKey},
 };
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
+        Mutex,
     },
     time::Instant,
 };
@@ -29,7 +31,10 @@ fn main() {
     let mut mvp = MVP::new();
 
     mvp.view = look_at(&vec3(0.0, 0.0, 3.0), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
-    //mvp.model = translate(&identity(), &vec3(0.0, 0.0, -1.0));
+    mvp.model = translate(&identity(), &vec3(0.0, 0.0, -1.0));
+
+    let mock = Arc::new(Mutex::new(mvp.model));
+    let muck = mock.clone();
 
     let event_loop = winit::event_loop::EventLoopBuilder::new()
         .build()
@@ -371,12 +376,11 @@ fn main() {
                     mat4 worldview = uniforms.view * uniforms.model;
                     gl_Position = uniforms.projection * worldview * vec4(position, 1.0);
                     out_color = color;
-                    out_normal = (uniforms.model * vec4(normal, 1.0)).xyz;
+                    out_normal = (uniforms.model * vec4(normal, 0.0)).xyz;
                 }
             "
         }
     }
-
 
     mod fs {
         vulkano_shaders::shader! {
@@ -386,12 +390,13 @@ fn main() {
                 layout(location = 0) in vec3 color;
                 layout(location = 1) in vec3 normal;
 
+                
                 layout(location = 0) out vec4 f_color;
 
                 void main() {
-                    vec3 light = vec3(0.0, 1.0, 0.0);
+                    vec3 light = vec3(1.0, -1.0, 0.0);
                     float light_dist = distance(light, normal);
-                    f_color = vec4(color * light_dist / 2, 1.0);
+                    f_color = vec4(1.0, 0.0, 0.0, 1.0) * light_dist / 2; // applies the lighting
                 }
             "
         }
@@ -420,6 +425,52 @@ fn main() {
     )
     .unwrap();
 
+    /*
+    let render_pass = vulkano::ordered_passes_renderpass!(device.clone(),
+        attachments: {
+            final_color: {
+                format: swapchain.image_format(),
+                samples: 1,
+                load_op: Clear,
+                store_op: Store,
+            },
+            color: {
+                format: Format::A2B10G10R10_UNORM_PACK32,
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
+            },
+            normals: {
+                format: Format::R16G16B16A16_SFLOAT,
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
+            },
+            depth: {
+                format: Format::D16_UNORM,
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
+            }
+        },
+        passes: [
+            {
+                color: [color, normals],
+                depth_stencil: {depth},
+                input: []
+            },
+            {
+                color: [final_color],
+                depth_stencil: {},
+                input: [color, normals]
+            }
+        ]
+    ).unwrap();
+    */
+
+    let rotat_direction = Arc::new(AtomicBool::new(true));
+    let rotat_dir = rotat_direction.clone();
+
     let pipeline = {
         let vs = vs::load(device.clone()).unwrap().entry_point("main").unwrap();
         let fs = fs::load(device.clone()).unwrap().entry_point("main").unwrap();
@@ -440,6 +491,11 @@ fn main() {
         .unwrap();
 
         let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
+
+        /*
+        let deferred_pass = Subpass::from(render_pass.clone(), 0).unwrap();
+        let lighting_pass = Subpass::from(render_pass.clone(), 1).unwrap();
+        */
 
         GraphicsPipeline::new(device.clone(), None,
             GraphicsPipelineCreateInfo {
@@ -468,8 +524,6 @@ fn main() {
         )
         .unwrap()
     };
-
-    let rotation_start = Instant::now();
 
     let uniform_buffer = {
         Buffer::from_data(
@@ -507,6 +561,8 @@ fn main() {
     let recreate_swapchain = Arc::new(AtomicBool::new(false));
 
     let recr_swapch = recreate_swapchain.clone(); 
+    
+    let mut rotate_amount = 0.0;
 
     // rendering thread, handles rendering handling, handles the renders, has all the rendering code
     // a monad is a monoid in the category of endofunctors
@@ -534,23 +590,29 @@ fn main() {
             recr_swapch.store(false, Ordering::Relaxed);
         }
 
-        let elapsed = rotation_start.elapsed().as_secs() as f64
-            + rotation_start.elapsed().subsec_nanos() as f64 / 1_000_000_000.0;
-        let elapsed_as_radians = elapsed * std::f64::consts::PI / 180.0 * 30.0;
+        let mock = mock.lock().unwrap();
+
+        rotate_amount += if rotat_dir.load(Ordering::Relaxed) {0.01} else {-0.01};
+
         let rotata = rotate_normalized_axis(
-            &mvp.model,
+            //&mvp.model,
+            &mock,
             //std::f32::consts::PI*2.0/3.0,
-            elapsed_as_radians as f32,
+            rotate_amount as f32,
             //0.0,
             &vec3(1.0, 0.0, 0.0),
         );
         let model = rotate_normalized_axis(
-            &mvp.model,
-            //elapsed_as_radians as f32,
+            //&mvp.model,
+            &mock,
+            //rotate_amount as f32,
             0.0,
             &vec3(0.0, 0.0, 1.0),
         );
-        uniform_buffer.write().unwrap().model = model * rotata;
+
+        drop(mock);
+
+        uniform_buffer.write().unwrap().model = model * rotata; // apply the rotation
 
         let (image_index, suboptimal, acquire_feature) =
             match swapchain::acquire_next_image(swapchain.clone(), None).map_err(Validated::unwrap) {
@@ -563,7 +625,7 @@ fn main() {
             recr_swapch.store(true, Ordering::Relaxed);
         }
 
-        let clear_values = vec![Some([1.0, 0.80, 0.65, 1.0].into()), Some(1.0.into())];
+        let clear_values = vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1.0.into())];
 
         let mut cmd_buffer_builder = AutoCommandBufferBuilder::primary(
             &command_buffer_allocator,
@@ -649,6 +711,43 @@ fn main() {
         } => {
             recreate_swapchain.store(true, Ordering::Relaxed);
         }
+        Event::WindowEvent {
+            event: WindowEvent::KeyboardInput{
+                event: KeyEvent{
+                    logical_key: key,
+                    state: ElementState::Pressed,
+                    ..
+                },
+                ..
+            },
+            ..
+        } => match key.as_ref() {
+            Key::Named(NamedKey::Space) => {
+                rotat_direction.store(!rotat_direction.load(Ordering::Relaxed), Ordering::Relaxed);
+            },
+            Key::Named(NamedKey::Escape) => {
+                win_target.exit();
+            },
+            Key::Character("f") => {
+
+                let fullscreen = if window.fullscreen().is_some() {
+                    None
+                } else {
+                    Some(Fullscreen::Borderless(None))
+                };
+                
+                window.set_fullscreen(fullscreen);
+            },
+            Key::Character("p") => {
+                let mut muck = muck.lock().unwrap();
+                *muck = translate(&identity(), &vec3(0.0, 0.0, -0.0));
+            },
+            Key::Character("m") => {
+                let mut muck = muck.lock().unwrap();
+                *muck = translate(&identity(), &vec3(0.0, 0.0, -5.0));
+            }
+            _ => (),
+        }
         _ => {}
     })
     .expect("unable to run event loop");
@@ -688,3 +787,33 @@ fn window_size_dependent_setup(
         })
         .collect::<Vec<_>>()
 }
+
+/*
+mod directional_vert {
+    vulkano_shaders::shader! {
+        ty: "vertex",
+        path: "src/shaders/directional.vert",
+    }
+}
+
+mod directional_frag {
+    vulkano_shaders::shader! {
+        ty: "fragment",
+        path: "src/shaders/directional.frag",
+    }
+}
+
+mod ambient_vert {
+    vulkano_shaders::shader! {
+        ty: "vertex",
+        path: "src/shaders/ambient.vert",
+    }
+}
+
+mod ambient_frag{
+    vulkano_shaders::shader! {
+        ty: "fragment",
+        path: "src/shaders/ambient.frag",
+    }
+}
+*/
