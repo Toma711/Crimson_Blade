@@ -22,16 +22,23 @@ use std::{
         Arc,
         Mutex,
     },
-    time::Instant,
 };
-use nalgebra_glm::{half_pi, identity, look_at, perspective, rotate_normalized_axis, translate, vec3, TMat4, pi, sqrt, cross};
+use nalgebra_glm::{half_pi, identity, look_at, perspective, rotate_normalized_axis, translate, vec3, vec4, TMat4, TVec3, TVec4};
 use bytemuck::{Pod, Zeroable};
 
 fn main() {
     let mut mvp = MVP::new();
+    let mut amb = AMB::new();
+    let mut drb = DRB::new();
 
     mvp.view = look_at(&vec3(0.0, 0.0, 3.0), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
-    mvp.model = translate(&identity(), &vec3(0.0, 0.0, -1.0));
+    mvp.model = translate(&identity(), &vec3(0.0, 0.0, 0.0));
+
+    amb.color = vec3(1.0, 1.0, 1.0);
+    amb.intensity = 0.2;
+
+    drb.position = vec4(-2.0, 0.0, 0.0, 1.0);
+    drb.color = vec3(1.0, 0.0, 0.0);
 
     let mock = Arc::new(Mutex::new(mvp.model));
     let muck = mock.clone();
@@ -157,12 +164,44 @@ fn main() {
         projection: TMat4<f32>,
     }
 
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, Pod, Zeroable)]
+    struct AMB {
+        color: TVec3<f32>,
+        intensity: f32,
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, Pod, Zeroable)]
+    struct DRB {
+        position: TVec4<f32>,
+        color: TVec3<f32>,
+    }
+
     impl MVP {
         fn new() -> MVP {
             MVP {
                 model: identity(),
                 view: identity(),
                 projection: identity(),
+            }
+        }
+    }
+
+    impl AMB {
+        fn new() -> AMB {
+            AMB {
+                color: vec3(0.0, 0.0, 0.0),
+                intensity: 0.0,
+            }
+        }
+    }
+
+    impl DRB {
+        fn new() -> DRB {
+            DRB {
+                position: vec4(0.0, 0.0, 0.0, 0.0),
+                color: vec3(0.0, 0.0, 0.0),
             }
         }
     }
@@ -426,13 +465,6 @@ fn main() {
         }
     }
 
-    /*
-    let deferred_vert = deferred_vert::load(device.clone()).unwrap();
-    let deferred_frag = deferred_frag::load(device.clone()).unwrap();
-    let lighting_vert = lighting_vert::load(device.clone()).unwrap();
-    let lighting_frag = lighting_frag::load(device.clone()).unwrap();
-    */
-        
     // deferred pipeline
     let deferred_pipeline = {
 
@@ -533,55 +565,7 @@ fn main() {
         ).unwrap()
     };
 
-    // old pipeline
-    /*
-    let pipeline = {
-        let vs = vs::load(device.clone()).unwrap().entry_point("main").unwrap();
-        let fs = fs::load(device.clone()).unwrap().entry_point("main").unwrap();
-
-        let vertex_input_state = Vertex::per_vertex().definition(&vs.info().input_interface).unwrap();
-
-        let stages = [
-            PipelineShaderStageCreateInfo::new(vs),
-            PipelineShaderStageCreateInfo::new(fs),
-        ];
-
-        let layout = PipelineLayout::new(
-            device.clone(),
-            PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-                .into_pipeline_layout_create_info(device.clone())
-                .unwrap(),
-        )
-        .unwrap();
-
-        GraphicsPipeline::new(device.clone(), None,
-            GraphicsPipelineCreateInfo {
-                stages: stages.into_iter().collect(),
-                vertex_input_state: Some(vertex_input_state),
-                input_assembly_state: Some(InputAssemblyState::default()),
-                viewport_state: Some(ViewportState::default()),
-                rasterization_state: Some(RasterizationState {
-                    cull_mode: CullMode::Back,
-                    front_face: FrontFace::Clockwise,
-                    ..Default::default()
-                }),
-                multisample_state: Some(MultisampleState::default()),
-                depth_stencil_state: Some(DepthStencilState {
-                    depth: Some(DepthState::simple()),
-                    ..Default::default()
-                }),
-                color_blend_state: Some(ColorBlendState::with_attachment_states(
-                    subpass.num_color_attachments(),
-                    ColorBlendAttachmentState::default()
-                )),
-                dynamic_state: [DynamicState::Viewport].into_iter().collect(),
-                subpass: Some(subpass.into()),
-                ..GraphicsPipelineCreateInfo::layout(layout)
-            },
-        ).unwrap()
-    };
-    */
-
+    // buffers
     let uniform_buffer = {
         Buffer::from_data(
             memory_allocator.clone(),
@@ -590,12 +574,42 @@ fn main() {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter:: HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             }, 
             mvp,
         )
         .unwrap()
+    };
+
+    let ambient_buffer = {
+        Buffer::from_data(
+            memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE |  MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            amb,
+        ).unwrap()
+    };
+            
+     let directional_buffer = {
+        Buffer::from_data(
+            memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            drb,
+        ).unwrap()
     };
 
     let mut viewport = Viewport {
@@ -620,28 +634,18 @@ fn main() {
     ).unwrap();
     
     let lighting_layout = lighting_pipeline.layout().set_layouts().get(0).unwrap();
-    let lighting_set = PersistentDescriptorSet::new(
+    let mut lighting_set = PersistentDescriptorSet::new(
         &descriptor_set_allocator,
         lighting_layout.clone(),
         [
             WriteDescriptorSet::image_view(0, color_buffer.clone()),
             WriteDescriptorSet::image_view(1, normal_buffer.clone()),
             WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
+            WriteDescriptorSet::buffer(3, ambient_buffer.clone()),
+            WriteDescriptorSet::buffer(4, directional_buffer.clone()),
         ],
         []
     ).unwrap();
-
-    // old pipeline layout
-    /*
-    let layout = pipeline.layout().set_layouts().get(0).unwrap();
-    let set = PersistentDescriptorSet::new(
-        &descriptor_set_allocator,
-        layout.clone(),
-        [WriteDescriptorSet::buffer(0, uniform_buffer.clone())],
-        []
-    )
-    .unwrap();
-    */
 
     let recreate_swapchain = Arc::new(AtomicBool::new(false));
 
@@ -682,6 +686,20 @@ fn main() {
             color_buffer = new_color_buffer;
             normal_buffer = new_normal_buffer;
 
+            let lighting_layout = lighting_pipeline.layout().set_layouts().get(0).unwrap();
+            lighting_set = PersistentDescriptorSet::new(
+                &descriptor_set_allocator,
+                lighting_layout.clone(),
+                [
+                    WriteDescriptorSet::image_view(0, color_buffer.clone()),
+                    WriteDescriptorSet::image_view(1, normal_buffer.clone()),
+                    WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
+                    WriteDescriptorSet::buffer(3, ambient_buffer.clone()),
+                    WriteDescriptorSet::buffer(4, directional_buffer.clone()),
+                ],
+                []
+            ).unwrap();
+
             recr_swapch.store(false, Ordering::Relaxed);
         }
 
@@ -690,19 +708,16 @@ fn main() {
         rotate_amount += if rotat_dir.load(Ordering::Relaxed) {0.01} else {-0.01};
 
         let rotata = rotate_normalized_axis(
-            //&mvp.model,
             &mock,
-            //std::f32::consts::PI*2.0/3.0,
             rotate_amount as f32,
-            //0.0,
-            &vec3(1.0, 0.0, 0.0),
+            &vec3(0.0, 1.0, 0.0),
         );
         let model = rotate_normalized_axis(
             //&mvp.model,
             &mock,
             //rotate_amount as f32,
             0.0,
-            &vec3(0.0, 0.0, 1.0),
+            &vec3(0.0, 1.0, 0.0),
         );
 
         drop(mock);
@@ -721,11 +736,11 @@ fn main() {
         }
 
         let clear_values = vec![
-            Some([1.0, 0.0, 0.0, 1.0].into()),
-            Some([1.0, 0.0, 0.0, 1.0].into()),
-            Some([1.0, 0.0, 0.0, 1.0].into()),
+            Some([0.0, 0.0, 0.0, 1.0].into()),
+            Some([0.0, 0.0, 0.0, 1.0].into()),
+            Some([0.0, 0.0, 0.0, 1.0].into()),
             Some(1.0.into())];
-
+     
         let mut cmd_buffer_builder = AutoCommandBufferBuilder::primary(
             &command_buffer_allocator,
             queue.queue_family_index(),
@@ -868,7 +883,7 @@ fn main() {
             },
             Key::Character("p") => {
                 let mut muck = muck.lock().unwrap();
-                *muck = translate(&identity(), &vec3(0.0, 0.0, -0.0));
+                *muck = translate(&identity(), &vec3(0.0, 0.0, 0.0));
             },
             Key::Character("m") => {
                 let mut muck = muck.lock().unwrap();
@@ -891,16 +906,6 @@ fn window_size_dependent_setup(
     Arc<ImageView>,
     Arc<ImageView>,
 ){
-
-    /*
-    let color_buffer = ImageView::new(
-        AttachmentImage::transient_input_attachment(
-            allocator,
-            dimensions,
-            Format::A2B10G10R10_UNORM_PACK32,
-        ).unwrap(),
-    ).unwrap();
-    */
 
     let extent = images[0].extent();
     viewport.extent = [extent[0] as f32, extent[1] as f32];
@@ -927,7 +932,7 @@ fn window_size_dependent_setup(
                 ..Default::default()
             },
             AllocationCreateInfo::default()).unwrap(),
-    ).unwrap();
+        ).unwrap();
 
     let depth_buffer = ImageView::new_default(
         Image::new(
