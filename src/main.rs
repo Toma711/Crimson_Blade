@@ -22,8 +22,12 @@ use std::{
         Arc,
         Mutex,
     },
+    fs::*,
+    fs,
+    io::{self, BufRead},
+    path::Path,
 };
-use nalgebra_glm::{half_pi, identity, look_at, perspective, rotate_normalized_axis, translate, vec3, vec4, TMat4, TVec3, TVec4};
+use nalgebra_glm::{half_pi, identity, look_at, perspective, rotate_normalized_axis, translate, vec3, vec4, TMat4, TVec3, TVec4, Vec3};
 use bytemuck::{Pod, Zeroable};
 
 fn main() {
@@ -149,9 +153,9 @@ fn main() {
     #[derive(BufferContents, Vertex)]
     struct Vertex {
         #[format(R32G32B32_SFLOAT)]
-        position: [f32; 3],
+        position: Vec3,
         #[format(R32G32B32_SFLOAT)]
-        normal: [f32; 3],
+        normal: Vec3,
         #[format(R32G32B32_SFLOAT)]
         color: [f32; 3],
     }
@@ -206,126 +210,57 @@ fn main() {
         }
     }
 
-    let mut vertices = [
-        // With indices
-        // Vertex {
-        //     position: [-1.0, 3.0_f32.sqrt()/3.0, 0.0],
-        //     color: [1.0, 0.0, 0.0],
-        // },
-        // Vertex {
-        //     position: [1.0, 3.0_f32.sqrt()/3.0, 0.0],
-        //     color: [0.0, 1.0, 0.0],
-        // },
-        // Vertex {
-        //     position: [0.0, -2.0*3.0_f32.sqrt()/3.0, 0.0],
-        //     color: [0.0, 0.0, 1.0],
-        // },
-        // Vertex {
-        //     position: [0.0, 0.0, -(21.0_f32/9.0).sqrt()],
-        //     color: [1.0, 1.0, 0.0],
-        // },
+    let mut vertices = Vec::new();
+    let mut v_positions = Vec::new();
+    let mut v_normals = Vec::new();
 
-        // no indices :frowny_face:
-        // normals get calculated lower in poggwam
-        Vertex {
-            position: [0.0, -2.0*3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            color: [0.0, 0.0, 1.0],
-        },
-        Vertex {
-            position: [1.0, 3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            color: [0.0, 1.0, 0.0],
-        },
-        Vertex {
-            position: [-1.0, 3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-            color: [1.0, 0.0, 0.0],
-        },
+    let lines = fs::read_to_string("./src/data/models/monkey.obj").expect("Should have been able to read the file");
 
-        Vertex {
-            position: [1.0, 3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 0.0, 0.0],
-            color: [0.0, 1.0, 0.0],
-        },
-        Vertex {
-            position: [0.0, 0.0, -(21.0_f32/9.0).sqrt()],
-            normal: [0.0, 1.0, 0.0],
-            color: [1.0, 1.0, 0.0],
-        },
-        Vertex {
-            position: [-1.0, 3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [1.0, 0.0, 0.0],
-        },
+    for line in lines.lines() {
+        if &line[..2] == "v " {
+            let numbers = &line[2..];
+            let mut numbers_split = numbers.split(' ');
 
-        Vertex {
-            position: [0.0, -2.0*3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [0.0, 0.0, 1.0],
-        },
-        Vertex {
-            position: [0.0, 0.0, -(21.0_f32/9.0).sqrt()],
-            normal: [0.0, 1.0, 0.0],
-            color: [1.0, 1.0, 0.0],
-        },
-        Vertex {
-            position: [1.0, 3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [0.0, 1.0, 0.0],
-        },
+            v_positions.push(
+                vec3(
+                        numbers_split.next().unwrap().parse::<f32>().unwrap(),
+                        numbers_split.next().unwrap().parse::<f32>().unwrap(),
+                        numbers_split.next().unwrap().parse::<f32>().unwrap(),
+                    )
+            );
+        }else if &line[..2] == "vn" {
+            let numbers = &line[3..];
+            let mut numbers_split = numbers.split(' ');
 
-        Vertex {
-            position: [0.0, -2.0*3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [0.0, 0.0, 1.0],
-        },
-        Vertex {
-            position: [-1.0, 3.0_f32.sqrt()/3.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [1.0, 0.0, 0.0],
-        },
-        Vertex {
-            position: [0.0, 0.0, -(21.0_f32/9.0).sqrt()],
-            normal: [0.0, 1.0, 0.0],
-            color: [1.0, 1.0, 0.0],
-        },
+            v_normals.push(
+                vec3(
+                        numbers_split.next().unwrap().parse::<f32>().unwrap(),
+                        numbers_split.next().unwrap().parse::<f32>().unwrap(),
+                        numbers_split.next().unwrap().parse::<f32>().unwrap(),
+                    )
+            );
+        }else if &line[..2] == "f " {
+            let indice_numbers = &line[2..];
+            let mut indice_numbers_split = indice_numbers.split(' ');
+            
+            verticeIndice(indice_numbers_split.next().unwrap(), &v_positions, &v_normals, &mut vertices);
+            verticeIndice(indice_numbers_split.next().unwrap(), &v_positions, &v_normals, &mut vertices);
+            verticeIndice(indice_numbers_split.next().unwrap(), &v_positions, &v_normals, &mut vertices);
 
-        // other twiangles
-        // Vertex {
-        //     position: [1.375, 0.5, -0.5],
-        //     color: [1.0, 0.0, 0.0],
-        // },
-        // Vertex {
-        //     position: [2.625, 0.5, -0.5],
-        //     color: [0.0, 1.0, 0.0],
-        // },
-        // Vertex {
-        //     position: [2.0, -0.5, -0.5],
-        //     color: [0.0, 0.0, 1.0],
-        // },
-        // Vertex {
-        //     position: [2.0, 0.25, -1.5],
-        //     color: [1.0, 1.0, 0.0],
-        // },
-        // Vertex {
-        //     position: [-2.625, 0.5, -0.5],
-        //     color: [1.0, 0.0, 0.0],
-        // },
-        // Vertex {
-        //     position: [-1.375, 0.5, -0.5],
-        //     color: [0.0, 1.0, 0.0],
-        // },
-        // Vertex {
-        //     position: [-2.0, -0.5, -0.5],
-        //     color: [0.0, 0.0, 1.0],
-        // },
-        // Vertex {
-        //     position: [-2.0, 0.25, -1.5],
-        //     color: [1.0, 1.0, 0.0],
-        // },
-    ];
+            fn verticeIndice(indice_numbers_split: &str, v_positions: &Vec<Vec3>, v_normals: &Vec<Vec3>, vertices: &mut Vec<Vertex>){
+                let mut indice_numbers_split_split = indice_numbers_split.split("//");
+                vertices.push(
+                    Vertex{
+                        position: v_positions[indice_numbers_split_split.next().unwrap().parse::<usize>().unwrap() - 1],
+                        normal: v_normals[indice_numbers_split_split.next().unwrap().parse::<usize>().unwrap() - 1],
+                        color: [1.0, 1.0, 1.0],
+                    }
+                );
+            }
+        }
+    }
 
+    /*
     fn cross([a1, a2, a3]: [f32; 3], [b1, b2, b3]: [f32; 3]) -> [f32; 3] {
         [a2*b3-a3*b2, a3*b1-a1*b3,a1*b2-a2*b1]
     }
@@ -346,24 +281,8 @@ fn main() {
         b.normal = normal;
         c.normal = normal;
     }
-
-    let indices = [
-        2, 1, 0,
-        1, 3, 0,
-        2, 3, 1,
-        2, 0, 3,
-
-        // 6, 5, 4,
-        // 5, 7, 4,
-        // 6, 7, 5,
-        // 6, 4, 7,
-
-        // 10, 9, 8,
-        // 9, 11, 8,
-        // 10, 11, 9,
-        // 10, 8, 11,
-        ];
-
+    */
+    
     let vertex_buffer = Buffer::from_iter(
         memory_allocator.clone(),
         BufferCreateInfo {
@@ -378,6 +297,7 @@ fn main() {
     )
     .unwrap();
 
+    /*
     let index_buffer: Subbuffer<[u16]> = Buffer::from_iter(
         memory_allocator.clone(),
         BufferCreateInfo {
@@ -391,6 +311,7 @@ fn main() {
         indices,
     )
     .unwrap();
+    */
 
     let render_pass = vulkano::ordered_passes_renderpass!(device.clone(),
         attachments: {
@@ -713,11 +634,10 @@ fn main() {
             &vec3(0.0, 1.0, 0.0),
         );
         let model = rotate_normalized_axis(
-            //&mvp.model,
             &mock,
             //rotate_amount as f32,
             0.0,
-            &vec3(0.0, 1.0, 0.0),
+            &vec3(1.0, 0.0, 0.0),
         );
 
         drop(mock);
