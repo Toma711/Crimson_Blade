@@ -5,7 +5,7 @@ layout(location = 0) in vec3 frag_pos;
 layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput u_color;
 layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput u_normals;
 
-layout(set = 0, binding = 3) uniform Directional_Light_Data {
+layout(set = 0, binding = 4) uniform Directional_Light_Data {
 	vec4 position;
 	vec3 color;
 } directional;

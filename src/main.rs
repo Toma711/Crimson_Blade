@@ -6,7 +6,7 @@ use vulkano::{
             physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo, QueueFlags
         }, format::Format, image::{view::ImageView, Image, ImageCreateInfo, ImageUsage, ImageLayout}, instance::{Instance, InstanceCreateInfo}, memory::allocator::{AllocationCreateInfo, MemoryAllocator, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{
         graphics::{
-            color_blend::{ColorBlendAttachmentState, ColorBlendState},depth_stencil::{DepthState, DepthStencilState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::{RasterizationState, CullMode, FrontFace}, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo
+            color_blend::{ColorBlendAttachmentState, ColorBlendState, AttachmentBlend, BlendFactor, BlendOp},depth_stencil::{DepthState, DepthStencilState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::{RasterizationState, CullMode, FrontFace}, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo
         }, layout::PipelineDescriptorSetLayoutCreateInfo, DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo
     }, render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass}, swapchain::{self, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, Version, VulkanError, VulkanLibrary
 };
@@ -39,7 +39,7 @@ fn main() {
     mvp.model = translate(&identity(), &vec3(0.0, 0.0, 0.0));
 
     amb.color = vec3(1.0, 1.0, 1.0);
-    amb.intensity = 0.2;
+    amb.intensity = 0.1;
 
     drb.position = vec4(-2.0, 0.0, 0.0, 1.0);
     drb.color = vec3(1.0, 0.0, 0.0);
@@ -204,7 +204,7 @@ fn main() {
     impl DRB {
         fn new() -> DRB {
             DRB {
-                position: vec4(0.0, 0.0, 0.0, 0.0),
+                position: vec4(0.0, 0.0, 0.0, 1.0),
                 color: vec3(0.0, 0.0, 0.0),
             }
         }
@@ -260,29 +260,6 @@ fn main() {
         }
     }
 
-    /*
-    fn cross([a1, a2, a3]: [f32; 3], [b1, b2, b3]: [f32; 3]) -> [f32; 3] {
-        [a2*b3-a3*b2, a3*b1-a1*b3,a1*b2-a2*b1]
-    }
-
-    fn normalize([a1, a2, a3]: [f32; 3]) -> [f32; 3] {
-        let sqr_length = a1*a1+a2*a2+a3*a3;
-        let length = sqr_length.sqrt();
-        [a1/length, a2/length, a3/length]
-    }
-
-    for list in vertices.chunks_mut(3) {
-        let [a, b, c] = list else { unreachable!(); };
-        let ba = [b.position[0] - a.position[0], b.position[1] - a.position[1], b.position[2] - a.position[2]];
-        let ca = [b.position[0] - c.position[0], b.position[1] - c.position[1], b.position[2] - c.position[2]];
-        let ortho = cross(ba, ca);
-        let normal = normalize(ortho);
-        a.normal = normal;
-        b.normal = normal;
-        c.normal = normal;
-    }
-    */
-    
     let vertex_buffer = Buffer::from_iter(
         memory_allocator.clone(),
         BufferCreateInfo {
@@ -297,22 +274,6 @@ fn main() {
     )
     .unwrap();
 
-    /*
-    let index_buffer: Subbuffer<[u16]> = Buffer::from_iter(
-        memory_allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::INDEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        indices,
-    )
-    .unwrap();
-    */
-
     let render_pass = vulkano::ordered_passes_renderpass!(device.clone(),
         attachments: {
             final_color: {
@@ -325,13 +286,13 @@ fn main() {
                 format: Format::A2B10G10R10_UNORM_PACK32,
                 samples: 1,
                 load_op: Clear,
-                store_op: Store,
+                store_op: DontCare,
             },
             normals: {
                 format: Format::R16G16B16A16_SFLOAT,
                 samples: 1,
                 load_op: Clear,
-                store_op: Store,
+                store_op: DontCare,
             },
             depth: {
                 format: Format::D16_UNORM,
@@ -356,35 +317,6 @@ fn main() {
 
     let rotat_direction = Arc::new(AtomicBool::new(true));
     let rotat_dir = rotat_direction.clone();
-
-    // loading the shaders or something idk
-    mod deferred_vert {
-        vulkano_shaders::shader!{
-            ty: "vertex",
-            path: "src/shaders/deferred.vert",
-        }
-    }
-
-    mod deferred_frag {
-        vulkano_shaders::shader!{
-            ty: "fragment",
-            path: "src/shaders/deferred.frag",
-        }
-    }
-
-    mod lighting_vert {
-        vulkano_shaders::shader!{
-            ty: "vertex",
-            path: "src/shaders/lighting.vert",
-        }
-    }
-
-    mod lighting_frag {
-        vulkano_shaders::shader!{
-            ty: "fragment",
-            path: "src/shaders/lighting.frag",
-        }
-    }
 
     // deferred pipeline
     let deferred_pipeline = {
@@ -438,17 +370,17 @@ fn main() {
         ).unwrap()
     };
 
-    // lighting pipeline
-    let lighting_pipeline = {
+    // ambient pipeline
+    let ambient_pipeline = {
 
-        let lv = lighting_vert::load(device.clone()).unwrap().entry_point("main").unwrap();
-        let lf = lighting_frag::load(device.clone()).unwrap().entry_point("main").unwrap();
+        let av = ambient_vert::load(device.clone()).unwrap().entry_point("main").unwrap();
+        let af = ambient_frag::load(device.clone()).unwrap().entry_point("main").unwrap();
 
-        let vertex_input_state = Vertex::per_vertex().definition(&lv.info().input_interface).unwrap();
+        let vertex_input_state = Vertex::per_vertex().definition(&av.info().input_interface).unwrap();
 
         let stages = [
-            PipelineShaderStageCreateInfo::new(lv),
-            PipelineShaderStageCreateInfo::new(lf),
+            PipelineShaderStageCreateInfo::new(av),
+            PipelineShaderStageCreateInfo::new(af),
         ];
 
         let layout = PipelineLayout::new(
@@ -475,10 +407,68 @@ fn main() {
                     ..Default::default()
                 }),
                 multisample_state: Some(MultisampleState::default()),
-                color_blend_state: Some(ColorBlendState::with_attachment_states(
-                    lighting_pass.num_color_attachments(),
-                    ColorBlendAttachmentState::default()
-                )),
+                color_blend_state:
+                    Some(ColorBlendState::new(lighting_pass.num_color_attachments()).blend(AttachmentBlend{
+                        src_color_blend_factor: BlendFactor::One,
+                        dst_color_blend_factor: BlendFactor::One,
+                        color_blend_op: BlendOp::Add,
+                        src_alpha_blend_factor: BlendFactor::One,
+                        dst_alpha_blend_factor: BlendFactor::One,
+                        alpha_blend_op: BlendOp::Max,
+                    })),
+                dynamic_state: [DynamicState::Viewport].into_iter().collect(),
+                subpass: Some(lighting_pass.into()),
+                ..GraphicsPipelineCreateInfo::layout(layout)
+            },
+        ).unwrap()
+    };
+
+    // directional pipeline
+    let directional_pipeline = {
+
+        let dv = directional_vert::load(device.clone()).unwrap().entry_point("main").unwrap();
+        let df = directional_frag::load(device.clone()).unwrap().entry_point("main").unwrap();
+
+        let vertex_input_state = Vertex::per_vertex().definition(&dv.info().input_interface).unwrap();
+
+        let stages = [
+            PipelineShaderStageCreateInfo::new(dv),
+            PipelineShaderStageCreateInfo::new(df),
+        ];
+
+        let layout = PipelineLayout::new(
+            device.clone(),
+            PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+                .into_pipeline_layout_create_info(device.clone())
+                .unwrap(),
+        )
+        .unwrap();
+
+        let lighting_pass = Subpass::from(render_pass.clone(), 1).unwrap();
+
+        GraphicsPipeline::new(
+            device.clone(),
+            None,
+            GraphicsPipelineCreateInfo {
+                stages: stages.into_iter().collect(),
+                vertex_input_state: Some(vertex_input_state),
+                input_assembly_state: Some(InputAssemblyState::default()),
+                viewport_state: Some(ViewportState::default()),
+                rasterization_state: Some(RasterizationState {
+                    cull_mode: CullMode::Back,
+                    front_face: FrontFace::Clockwise,
+                    ..Default::default()
+                }),
+                multisample_state: Some(MultisampleState::default()),
+                color_blend_state:
+                    Some(ColorBlendState::new(lighting_pass.num_color_attachments()).blend(AttachmentBlend{
+                        src_color_blend_factor: BlendFactor::One,
+                        dst_color_blend_factor: BlendFactor::One,
+                        color_blend_op: BlendOp::Add,
+                        src_alpha_blend_factor: BlendFactor::One,
+                        dst_alpha_blend_factor: BlendFactor::One,
+                        alpha_blend_op: BlendOp::Max,
+                    })),
                 dynamic_state: [DynamicState::Viewport].into_iter().collect(),
                 subpass: Some(lighting_pass.into()),
                 ..GraphicsPipelineCreateInfo::layout(layout)
@@ -553,19 +543,30 @@ fn main() {
         [WriteDescriptorSet::buffer(0, uniform_buffer.clone())],
         []
     ).unwrap();
-    
-    let lighting_layout = lighting_pipeline.layout().set_layouts().get(0).unwrap();
-    let mut lighting_set = PersistentDescriptorSet::new(
+
+    let ambient_layout = ambient_pipeline.layout().set_layouts().get(0).unwrap();
+    let mut ambient_set = PersistentDescriptorSet::new(
         &descriptor_set_allocator,
-        lighting_layout.clone(),
+        ambient_layout.clone(),
+        [
+            WriteDescriptorSet::image_view(0, color_buffer.clone()),
+            WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
+            WriteDescriptorSet::buffer(3, ambient_buffer.clone()),
+        ],
+        []
+    ).unwrap();
+    
+    let directional_layout = directional_pipeline.layout().set_layouts().get(0).unwrap();
+    let mut directional_set = PersistentDescriptorSet::new(
+        &descriptor_set_allocator,
+        directional_layout.clone(),
         [
             WriteDescriptorSet::image_view(0, color_buffer.clone()),
             WriteDescriptorSet::image_view(1, normal_buffer.clone()),
             WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
-            WriteDescriptorSet::buffer(3, ambient_buffer.clone()),
             WriteDescriptorSet::buffer(4, directional_buffer.clone()),
         ],
-        []
+        [] 
     ).unwrap();
 
     let recreate_swapchain = Arc::new(AtomicBool::new(false));
@@ -607,15 +608,26 @@ fn main() {
             color_buffer = new_color_buffer;
             normal_buffer = new_normal_buffer;
 
-            let lighting_layout = lighting_pipeline.layout().set_layouts().get(0).unwrap();
-            lighting_set = PersistentDescriptorSet::new(
+            let ambient_layout = ambient_pipeline.layout().set_layouts().get(0).unwrap();
+            ambient_set = PersistentDescriptorSet::new(
                 &descriptor_set_allocator,
-                lighting_layout.clone(),
+                ambient_layout.clone(),
+                [
+                    WriteDescriptorSet::image_view(0, color_buffer.clone()),
+                    WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
+                    WriteDescriptorSet::buffer(3, ambient_buffer.clone()),
+                ],
+                []
+            ).unwrap();
+
+            let directional_layout = directional_pipeline.layout().set_layouts().get(0).unwrap();
+            directional_set = PersistentDescriptorSet::new(
+                &descriptor_set_allocator,
+                directional_layout.clone(),
                 [
                     WriteDescriptorSet::image_view(0, color_buffer.clone()),
                     WriteDescriptorSet::image_view(1, normal_buffer.clone()),
                     WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
-                    WriteDescriptorSet::buffer(3, ambient_buffer.clone()),
                     WriteDescriptorSet::buffer(4, directional_buffer.clone()),
                 ],
                 []
@@ -636,8 +648,8 @@ fn main() {
         let model = rotate_normalized_axis(
             &mock,
             //rotate_amount as f32,
-            0.0,
-            &vec3(1.0, 0.0, 0.0),
+            3.14,
+            &vec3(0.0, 0.0, 1.0),
         );
 
         drop(mock);
@@ -705,14 +717,29 @@ fn main() {
                 },
             )
             .unwrap()
-            .bind_pipeline_graphics(lighting_pipeline.clone())
+            .bind_pipeline_graphics(directional_pipeline.clone())
             .unwrap()
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
-                lighting_pipeline.layout().clone(),
+                directional_pipeline.layout().clone(),
                 0,
-                lighting_set.clone(),
+                directional_set.clone(),
             )
+            .unwrap()
+            .bind_vertex_buffers(0, vertex_buffer.clone())
+            .unwrap()
+            .draw(vertex_buffer.len() as u32, 1, 0, 0)
+            .unwrap()
+            .bind_pipeline_graphics(ambient_pipeline.clone())
+            .unwrap()
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                ambient_pipeline.layout().clone(),
+                0,
+                ambient_set.clone(),
+            )
+            .unwrap()
+            .bind_vertex_buffers(0, vertex_buffer.clone())
             .unwrap()
             .draw(vertex_buffer.len() as u32, 1, 0, 0)
             .unwrap()
@@ -720,21 +747,6 @@ fn main() {
                 SubpassEndInfo::default()
             )
             .unwrap();
-                
-            // .bind_index_buffer(index_buffer.clone())
-            // .unwrap();
-
-        // not sure what these are here for
-        /*
-        cmd_buffer_builder
-            .draw(vertex_buffer.len() as u32, 1, 0, 0)
-            //.draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
-            .unwrap();
-
-        cmd_buffer_builder
-            .end_render_pass(Default::default())
-            .unwrap();
-        */
 
         let command_buffer = cmd_buffer_builder.build().unwrap();
 
@@ -889,32 +901,45 @@ fn window_size_dependent_setup(
     (framebuffers, color_buffer.clone(), normal_buffer.clone())
 }
 
-/*
+// loading the shaders here
+mod deferred_vert {
+    vulkano_shaders::shader!{
+        ty: "vertex",
+        path: "src/shaders/deferred.vert",
+    }
+}
+
+mod deferred_frag {
+    vulkano_shaders::shader!{
+        ty: "fragment",
+        path: "src/shaders/deferred.frag",
+    }
+}
+
 mod ambient_vert {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: src/shaders/ambient.vert,
+        path: "src/shaders/ambient.vert",
     }
 }
 
 mod ambient_frag{
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: src/shaders/ambient.frag,
+        path: "src/shaders/ambient.frag",
     }
 }
 
 mod directional_vert {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: src/shaders/directional.vert,
+        path: "src/shaders/directional.vert",
     }
 }
 
 mod directional_frag {
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: src/shaders/directional.frag,
+        path: "src/shaders/directional.frag",
     }
 }
-*/
