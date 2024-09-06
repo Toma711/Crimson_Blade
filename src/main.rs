@@ -6,7 +6,7 @@ use vulkano::{
             physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo, QueueFlags
         }, format::Format, image::{view::ImageView, Image, ImageCreateInfo, ImageUsage, ImageLayout}, instance::{Instance, InstanceCreateInfo}, memory::allocator::{AllocationCreateInfo, MemoryAllocator, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{
         graphics::{
-            color_blend::{ColorBlendAttachmentState, ColorBlendState, AttachmentBlend, BlendFactor, BlendOp},depth_stencil::{DepthState, DepthStencilState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::{RasterizationState, CullMode, FrontFace}, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo
+            color_blend::{ColorBlendAttachmentState, ColorBlendState, AttachmentBlend, BlendFactor, BlendOp},depth_stencil::{DepthState, DepthStencilState, CompareOp}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::{RasterizationState, CullMode, FrontFace}, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo
         }, layout::PipelineDescriptorSetLayoutCreateInfo, DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo
     }, render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass}, swapchain::{self, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, future::FenceSignalFuture, GpuFuture}, Validated, Version, VulkanError, VulkanLibrary
 };
@@ -33,16 +33,24 @@ use bytemuck::{Pod, Zeroable};
 fn main() {
     let mut mvp = MVP::new();
     let mut amb = AMB::new();
-    let mut drb = DRB::new();
+    let mut drb_r = DRB::new();
+    let mut drb_g = DRB::new();
+    let mut drb_b = DRB::new();
 
     mvp.view = look_at(&vec3(0.0, 0.0, 3.0), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
     mvp.model = translate(&identity(), &vec3(0.0, 0.0, 0.0));
 
     amb.color = vec3(1.0, 1.0, 1.0);
-    amb.intensity = 0.1;
+    amb.intensity = 0.0;
 
-    drb.position = vec4(-2.0, 0.0, 0.0, 1.0);
-    drb.color = vec3(1.0, 0.0, 0.0);
+    drb_r.position = vec4(-2.0, 0.0, 0.0, 1.0);
+    drb_r.color = vec3(1.0, 0.0, 0.0);
+
+    drb_g.position = vec4(0.0, -2.0, 0.0, 1.0);
+    drb_g.color = vec3(0.0, 1.0, 0.0);
+    
+    drb_b.position = vec4(2.0, 0.0, 0.0, 1.0);
+    drb_b.color = vec3(0.0, 0.0, 1.0);
 
     let mock = Arc::new(Mutex::new(mvp.model));
     let muck = mock.clone();
@@ -309,7 +317,7 @@ fn main() {
             },
             {
                 color: [final_color],
-                depth_stencil: {},
+                depth_stencil: {depth},
                 input: [color, normals]
             }
         ]
@@ -407,6 +415,13 @@ fn main() {
                     ..Default::default()
                 }),
                 multisample_state: Some(MultisampleState::default()),
+                depth_stencil_state: Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        compare_op: CompareOp::LessOrEqual,
+                        ..DepthState::simple()
+                    }),
+                    ..Default::default()
+                }),
                 color_blend_state:
                     Some(ColorBlendState::new(lighting_pass.num_color_attachments()).blend(AttachmentBlend{
                         src_color_blend_factor: BlendFactor::One,
@@ -460,6 +475,13 @@ fn main() {
                     ..Default::default()
                 }),
                 multisample_state: Some(MultisampleState::default()),
+                depth_stencil_state: Some(DepthStencilState {
+                    depth: Some(DepthState {
+                        compare_op: CompareOp::LessOrEqual,
+                        ..DepthState::simple()
+                    }),
+                    ..Default::default()
+                }),
                 color_blend_state:
                     Some(ColorBlendState::new(lighting_pass.num_color_attachments()).blend(AttachmentBlend{
                         src_color_blend_factor: BlendFactor::One,
@@ -467,7 +489,7 @@ fn main() {
                         color_blend_op: BlendOp::Add,
                         src_alpha_blend_factor: BlendFactor::One,
                         dst_alpha_blend_factor: BlendFactor::One,
-                        alpha_blend_op: BlendOp::Max,
+                        alpha_blend_op: BlendOp::Add,
                     })),
                 dynamic_state: [DynamicState::Viewport].into_iter().collect(),
                 subpass: Some(lighting_pass.into()),
@@ -519,7 +541,7 @@ fn main() {
                 memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            drb,
+            drb_r,
         ).unwrap()
     };
 
@@ -900,6 +922,23 @@ fn window_size_dependent_setup(
 
     (framebuffers, color_buffer.clone(), normal_buffer.clone())
 }
+
+/*
+fn generate_directional_buffer() -> Subbuffer<drb_r>{
+    Buffer::from_data(
+        memory_allocator.clone(),
+        BufferCreateInfo {
+            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE |  MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+            ..Default::default()
+        },
+        drb_r,
+    ).unwrap()
+}
+*/
 
 // loading the shaders here
 mod deferred_vert {
