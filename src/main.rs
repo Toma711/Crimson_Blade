@@ -40,16 +40,16 @@ fn main() {
     mvp.view = look_at(&vec3(0.0, 0.0, 3.0), &vec3(0.0, 0.0, 0.0), &vec3(0.0, 1.0, 0.0));
     mvp.model = translate(&identity(), &vec3(0.0, 0.0, 0.0));
 
-    amb.color = vec3(1.0, 1.0, 1.0);
-    amb.intensity = 0.0;
+    amb.color = vec3(0.0, 0.0, 0.0);
+    amb.intensity = 0.1;
 
-    drb_r.position = vec4(-2.0, 0.0, 0.0, 1.0);
+    drb_r.position = vec4(-4.0, 0.0, 0.0, 1.0);
     drb_r.color = vec3(1.0, 0.0, 0.0);
 
-    drb_g.position = vec4(0.0, -2.0, 0.0, 1.0);
+    drb_g.position = vec4(0.0, -6.0, 0.0, 1.0);
     drb_g.color = vec3(0.0, 1.0, 0.0);
     
-    drb_b.position = vec4(2.0, 0.0, 0.0, 1.0);
+    drb_b.position = vec4(4.0, 0.0, 0.0, 1.0);
     drb_b.color = vec3(0.0, 0.0, 1.0);
 
     let mock = Arc::new(Mutex::new(mvp.model));
@@ -529,21 +529,6 @@ fn main() {
             amb,
         ).unwrap()
     };
-            
-     let directional_buffer = {
-        Buffer::from_data(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            drb_r,
-        ).unwrap()
-    };
 
     let mut viewport = Viewport {
         offset: [0.0, 0.0],
@@ -576,19 +561,6 @@ fn main() {
             WriteDescriptorSet::buffer(3, ambient_buffer.clone()),
         ],
         []
-    ).unwrap();
-    
-    let directional_layout = directional_pipeline.layout().set_layouts().get(0).unwrap();
-    let mut directional_set = PersistentDescriptorSet::new(
-        &descriptor_set_allocator,
-        directional_layout.clone(),
-        [
-            WriteDescriptorSet::image_view(0, color_buffer.clone()),
-            WriteDescriptorSet::image_view(1, normal_buffer.clone()),
-            WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
-            WriteDescriptorSet::buffer(4, directional_buffer.clone()),
-        ],
-        [] 
     ).unwrap();
 
     let recreate_swapchain = Arc::new(AtomicBool::new(false));
@@ -642,19 +614,6 @@ fn main() {
                 []
             ).unwrap();
 
-            let directional_layout = directional_pipeline.layout().set_layouts().get(0).unwrap();
-            directional_set = PersistentDescriptorSet::new(
-                &descriptor_set_allocator,
-                directional_layout.clone(),
-                [
-                    WriteDescriptorSet::image_view(0, color_buffer.clone()),
-                    WriteDescriptorSet::image_view(1, normal_buffer.clone()),
-                    WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
-                    WriteDescriptorSet::buffer(4, directional_buffer.clone()),
-                ],
-                []
-            ).unwrap();
-
             recr_swapch.store(false, Ordering::Relaxed);
         }
 
@@ -702,7 +661,13 @@ fn main() {
         )
         .unwrap();
 
-        cmd_buffer_builder
+        let mut commands = AutoCommandBufferBuilder::primary(
+            &command_buffer_allocator,
+            queue.queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        ).unwrap();
+
+        commands
             .begin_render_pass(
                 RenderPassBeginInfo{
                     clear_values,
@@ -738,7 +703,40 @@ fn main() {
                     ..Default::default()
                 },
             )
-            .unwrap()
+            .unwrap();
+
+        // directional r now i thinkies
+
+        let directional_layout = directional_pipeline.layout().set_layouts().get(0).unwrap();
+
+        let directional_buffer = {
+            Buffer::from_data(
+                memory_allocator.clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                drb_r,
+            ).unwrap()
+        };
+
+        let mut directional_set = PersistentDescriptorSet::new(
+            &descriptor_set_allocator,
+            directional_layout.clone(),
+            [
+                WriteDescriptorSet::image_view(0, color_buffer.clone()),
+                WriteDescriptorSet::image_view(1, normal_buffer.clone()),
+                WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
+                WriteDescriptorSet::buffer(4, directional_buffer.clone()),
+            ],
+            [] 
+        ).unwrap();
+
+        commands
             .bind_pipeline_graphics(directional_pipeline.clone())
             .unwrap()
             .bind_descriptor_sets(
@@ -751,7 +749,103 @@ fn main() {
             .bind_vertex_buffers(0, vertex_buffer.clone())
             .unwrap()
             .draw(vertex_buffer.len() as u32, 1, 0, 0)
+            .unwrap();
+
+        // directional g now i thinkies
+
+        let directional_layout = directional_pipeline.layout().set_layouts().get(0).unwrap();
+
+        let directional_buffer = {
+            Buffer::from_data(
+                memory_allocator.clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                drb_g,
+            ).unwrap()
+        };
+
+        let mut directional_set = PersistentDescriptorSet::new(
+            &descriptor_set_allocator,
+            directional_layout.clone(),
+            [
+                WriteDescriptorSet::image_view(0, color_buffer.clone()),
+                WriteDescriptorSet::image_view(1, normal_buffer.clone()),
+                WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
+                WriteDescriptorSet::buffer(4, directional_buffer.clone()),
+            ],
+            [] 
+        ).unwrap();
+
+        commands
+            .bind_pipeline_graphics(directional_pipeline.clone())
             .unwrap()
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                directional_pipeline.layout().clone(),
+                0,
+                directional_set.clone(),
+            )
+            .unwrap()
+            .bind_vertex_buffers(0, vertex_buffer.clone())
+            .unwrap()
+            .draw(vertex_buffer.len() as u32, 1, 0, 0)
+            .unwrap();
+
+        // directional b now i thinkies
+
+        let directional_layout = directional_pipeline.layout().set_layouts().get(0).unwrap();
+
+        let directional_buffer = {
+            Buffer::from_data(
+                memory_allocator.clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                drb_b,
+            ).unwrap()
+        };
+
+        let mut directional_set = PersistentDescriptorSet::new(
+            &descriptor_set_allocator,
+            directional_layout.clone(),
+            [
+                WriteDescriptorSet::image_view(0, color_buffer.clone()),
+                WriteDescriptorSet::image_view(1, normal_buffer.clone()),
+                WriteDescriptorSet::buffer(2, uniform_buffer.clone()),
+                WriteDescriptorSet::buffer(4, directional_buffer.clone()),
+            ],
+            [] 
+        ).unwrap();
+
+        commands
+            .bind_pipeline_graphics(directional_pipeline.clone())
+            .unwrap()
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                directional_pipeline.layout().clone(),
+                0,
+                directional_set.clone(),
+            )
+            .unwrap()
+            .bind_vertex_buffers(0, vertex_buffer.clone())
+            .unwrap()
+            .draw(vertex_buffer.len() as u32, 1, 0, 0)
+            .unwrap();
+
+
+        // ambient now
+        commands
             .bind_pipeline_graphics(ambient_pipeline.clone())
             .unwrap()
             .bind_descriptor_sets(
@@ -770,7 +864,7 @@ fn main() {
             )
             .unwrap();
 
-        let command_buffer = cmd_buffer_builder.build().unwrap();
+        let command_buffer = commands.build().unwrap();
 
         let dabadoo = 
             acquire_feature
@@ -922,23 +1016,6 @@ fn window_size_dependent_setup(
 
     (framebuffers, color_buffer.clone(), normal_buffer.clone())
 }
-
-/*
-fn generate_directional_buffer() -> Subbuffer<drb_r>{
-    Buffer::from_data(
-        memory_allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::STORAGE_BUFFER | BufferUsage::UNIFORM_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE |  MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        drb_r,
-    ).unwrap()
-}
-*/
 
 // loading the shaders here
 mod deferred_vert {
